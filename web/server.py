@@ -28,8 +28,8 @@ class _Placeholder(BasicBrain):
 
 
 class SimEngine:
-    def __init__(self, width=40, height=40, n_families=6, carn_families=2,
-                 max_agents=200, mut_sigma=0.08, brainmode="neuro"):
+    def __init__(self, width=34, height=34, n_families=6, carn_families=2,
+                 max_agents=140, mut_sigma=0.08, brainmode="neuro"):
         self.width, self.height, self.max_agents = width, height, max_agents
         self.n_families, self.carn_families = n_families, carn_families
         self.mut_sigma, self.brainmode = mut_sigma, brainmode
@@ -42,11 +42,12 @@ class SimEngine:
         self.pre_evolved = bool(self.seed_pool.get("herb") or self.seed_pool.get("carn"))
         self.lock = threading.RLock()
         self.running = True
-        self.fps = 12.0
+        self.fps = 10.0
         self.tick = 0
         self.history = []        # [herb, carn] per step
         self.fit_history = []    # avg fitness per step
         self._uid = 0
+        self.snap_json = b"{}"
         self._build()
 
     def _build(self):
@@ -59,6 +60,7 @@ class SimEngine:
         self.env.reset()
         self.tick = 0; self.history = []; self.fit_history = []
         self._ensure(self.env.agents)
+        self._refresh()
 
     def reset(self):
         with self.lock: self._build()
@@ -103,6 +105,7 @@ class SimEngine:
         self.fit_history.append(round(float(np.mean([a.fitness for a in env.agents])), 2) if env.agents else 0.0)
         if len(self.history) > 400:
             self.history = self.history[-400:]; self.fit_history = self.fit_history[-400:]
+        self._refresh()
 
     def snapshot(self):
         with self.lock:
@@ -142,6 +145,14 @@ class SimEngine:
                 "history": self.history[-200:], "fitHistory": self.fit_history[-200:],
             }
 
+    def _refresh(self):
+        """Serialize the snapshot once per change so each HTTP request just returns
+        cached bytes — keeps the server cheap under weak CPUs / many viewers."""
+        try:
+            self.snap_json = json.dumps(self.snapshot()).encode()
+        except Exception:
+            pass
+
     def control(self, cmd, v=None):
         with self.lock:
             if cmd == "play": self.running = True
@@ -155,6 +166,7 @@ class SimEngine:
                 from ReinLife.World.entities import Food
                 for _ in range(int(v or 50)): self.env.grid.set_random(Food, p=1)
             elif cmd == "step" and not self.running: self.step()
+        self._refresh()
         return {"ok": True, "running": self.running, "fps": self.fps,
                 "mutation": self.mut_sigma, "brainmode": self.brainmode}
 
@@ -183,7 +195,7 @@ class Handler(BaseHTTPRequestHandler):
         if u.path in ("/", "/index.html"):
             with open(os.path.join(HERE, "index.html"), "rb") as f:
                 self._send(200, f.read(), "text/html; charset=utf-8")
-        elif u.path == "/state": self._send(200, ENGINE.snapshot())
+        elif u.path == "/state": self._send(200, ENGINE.snap_json)
         elif u.path == "/control":
             q = parse_qs(u.query)
             self._send(200, ENGINE.control(q.get("cmd", [""])[0], q.get("v", [None])[0]))

@@ -81,8 +81,8 @@
         <button id="btnBrain">🧠 Brain: …</button>
       </div>
       <div class="row">
-        <label class="ctl">Speed: <b id="fpsVal">12</b> steps/s
-          <input type="range" id="fps" min="1" max="40" value="12"/></label>
+        <label class="ctl">Speed: <b id="fpsVal">10</b> steps/s
+          <input type="range" id="fps" min="1" max="30" value="10"/></label>
         <label class="ctl">Mutation: <b id="mutVal">0.08</b>
           <input type="range" id="mut" min="0" max="0.30" step="0.01" value="0.08"/></label>
       </div>
@@ -127,7 +127,7 @@
 const $ = s => document.querySelector(s);
 const cv = $('#world'), ctx = cv.getContext('2d');
 let CELL=15, W=40, H=40, last=null, selectedUid=null, brainmode='neuro';
-let prevP={}, curP={}, born={}, dying=[], snapT=0, stepDur=120, dataByUid={};
+let prevP={}, curP={}, born={}, dying=[], snapT=0, stepDur=120, recvT=0, dataByUid={};
 async function api(p){ const r=await fetch(p); return r.json(); }
 function ctl(c,v){ return api('/control?cmd='+c+(v!==undefined?'&v='+v:'')); }
 const lerp=(a,b,t)=>a+(b-a)*t, ease=t=>t<.5?2*t*t:1-Math.pow(-2*t+2,2)/2;
@@ -143,7 +143,10 @@ function sizeCanvas(s){ W=s.width;H=s.height;CELL=Math.max(8,Math.floor(600/Math
 function rrect(x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();}
 
 function ingest(s){
-  last=s; brainmode=s.brainmode; stepDur=Math.max(60, 1000/(s.fps||12));
+  last=s; brainmode=s.brainmode;
+  const _now=performance.now();
+  if(recvT) stepDur = stepDur*0.7 + Math.min(500,Math.max(40,_now-recvT))*0.3;
+  recvT=_now;
   const nextCur={}, nextPrev={}, nb={}, seen={};
   for(const a of s.agents){
     seen[a.uid]=a; const tgt={i:a.i,j:a.j};
@@ -228,7 +231,7 @@ async function fetchLoop(){
     $('#btnBrain').textContent='🧠 Brain: '+(s.brainmode==='neuro'?'Neural net':'Instinct');
     chart.data.labels=s.history.map((_,k)=>k); chart.data.datasets[0].data=s.history.map(h=>h[0]); chart.data.datasets[1].data=s.history.map(h=>h[1]); chart.update('none');
     chart2.data.labels=s.fitHistory.map((_,k)=>k); chart2.data.datasets[0].data=s.fitHistory; chart2.update('none');
-    setTimeout(fetchLoop, Math.max(45, stepDur*0.85));
+    setTimeout(fetchLoop, Math.max(80, stepDur*0.9));
   }catch(e){ setTimeout(fetchLoop, 300); }
 }
 fetchLoop();
