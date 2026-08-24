@@ -1,13 +1,14 @@
-"""Phase 2 — ecosystem layer for ReinLife (no torch, no core-env edits).
+"""Ecosystem layer for Evolvarium — heritable traits, instinct policy, colours.
 
-Behaviour is driven by a small heritable *genome* attached to each agent
-(diet, aggression, vision). Because static families share one brain object,
-we attach the genome to the agent instead and compute actions with access to
-that agent — this lets traits mutate per-lineage and evolve under selection.
+Behaviour is driven by a small heritable *genome* attached to each agent.
+Because static families share one brain object, the genome lives on the agent
+instead, which lets traits mutate per-lineage and evolve under selection.
 
-  diet : 0 = pure herbivore (eats plants, flees), 1 = pure carnivore (hunts agents)
-  aggr : probability of pressing the attack when prey is adjacent
+  diet   : 0 = pure herbivore (eats plants, flees), 1 = pure carnivore (hunts)
+  aggr   : probability of pressing the attack when prey is adjacent
   vision : how many cells out (Chebyshev) the creature perceives (1..3)
+  mrate  : self-adaptive mutation rate — the mutability of a lineage is itself
+           heritable, so the world can tune its own evolutionary speed
 """
 import random
 import numpy as np
@@ -18,23 +19,49 @@ NB = {UP: (C - 1, C), DOWN: (C + 1, C), LEFT: (C, C - 1), RIGHT: (C, C + 1)}
 ATK = {UP: A_UP, DOWN: A_DOWN, LEFT: A_LEFT, RIGHT: A_RIGHT}
 MOVES = [UP, RIGHT, DOWN, LEFT]
 
+MRATE_MIN, MRATE_MAX = 0.15, 2.5   # multiplier on the global mutation slider
+
 
 def _clip01(x):
     return max(0.0, min(1.0, x))
 
 
+def _clip(x, lo, hi):
+    return max(lo, min(hi, x))
+
+
 def seed_genome(role):
+    """A fresh founder genome. Carnivores start meat-leaning and aggressive."""
     if role == "carn":
-        return {"diet": _clip01(random.gauss(0.85, 0.05)),
-                "aggr": _clip01(random.gauss(0.80, 0.10)), "vision": 3}
-    return {"diet": _clip01(random.gauss(0.15, 0.05)),
-            "aggr": _clip01(random.gauss(0.25, 0.10)), "vision": 3}
+        g = {"diet": _clip01(random.gauss(0.85, 0.05)),
+             "aggr": _clip01(random.gauss(0.80, 0.10)), "vision": 3}
+    else:
+        g = {"diet": _clip01(random.gauss(0.15, 0.05)),
+             "aggr": _clip01(random.gauss(0.25, 0.10)), "vision": 3}
+    g["mrate"] = _clip(random.gauss(1.0, 0.2), MRATE_MIN, MRATE_MAX)
+    return g
 
 
 def mutate(g, sigma):
-    return {"diet": _clip01(g["diet"] + random.gauss(0, sigma)),
-            "aggr": _clip01(g["aggr"] + random.gauss(0, sigma)),
-            "vision": int(min(3, max(1, round(g["vision"] + random.gauss(0, sigma * 3)))))}
+    """Mutate the heritable traits. `sigma` is the world mutation rate; each
+    lineage scales it by its own evolved `mrate`."""
+    m = g.get("mrate", 1.0)
+    s = sigma * m
+    return {"diet": _clip01(g["diet"] + random.gauss(0, s)),
+            "aggr": _clip01(g["aggr"] + random.gauss(0, s)),
+            "vision": int(_clip(round(g["vision"] + random.gauss(0, s * 3)), 1, 3)),
+            "mrate": _clip(m * float(np.exp(random.gauss(0, 0.12))), MRATE_MIN, MRATE_MAX)}
+
+
+def crossover(g1, g2):
+    """Blend two parents' traits (uniform/BLX mix). Weights are recombined by
+    the neuro layer, which owns `W`."""
+    t = random.random()
+    return {"diet": _clip01(g1["diet"] * t + g2["diet"] * (1 - t)),
+            "aggr": _clip01(g1["aggr"] * t + g2["aggr"] * (1 - t)),
+            "vision": int(random.choice((g1["vision"], g2["vision"]))),
+            "mrate": _clip(g1.get("mrate", 1.0) * t + g2.get("mrate", 1.0) * (1 - t),
+                           MRATE_MIN, MRATE_MAX)}
 
 
 def is_carnivore(g):
@@ -55,32 +82,26 @@ def color_for(g):
     return f"rgb({r},{gr},{b})"
 
 
-def _nearest(grid, predicate_val, vis, sign=None):
-    """Return (di,dj) to nearest cell matching value condition within vision."""
-    if sign == "pos":
-        ys, xs = np.where(grid > 0)
-    elif sign == "neg":
-        ys, xs = np.where(grid == predicate_val)
-    else:
-        ys, xs = np.where(grid == predicate_val)
-    best = None; bestd = 99
-    for y, x in zip(ys, xs):
-        di, dj = int(y - C), int(x - C)
-        if di == 0 and dj == 0:
-            continue
-        if max(abs(di), abs(dj)) > vis:
-            continue
-        d = abs(di) + abs(dj)
-        if d < bestd:
-            bestd = d; best = (di, dj)
-    return best
+def nearest(grid, mask, vis=3):
+    """(di,dj) of the closest cell satisfying `mask` (a boolean array of the same
+    shape), within Chebyshev distance `vis`. None when nothing is in range."""
+    ys, xs = np.nonzero(mask)
+    if not len(ys):
+        return None
+    di = ys.astype(np.int16) - C
+    dj = xs.astype(np.int16) - C
+    keep = (np.maximum(np.abs(di), np.abs(dj)) <= vis) & ((di != 0) | (dj != 0))
+    if not keep.any():
+        return None
+    di, dj = di[keep], dj[keep]
+    k = int(np.argmin(np.abs(di) + np.abs(dj)))
+    return int(di[k]), int(dj[k])
 
 
 def _move(di, dj, food, away=False):
     """Pick a cardinal move toward (or away from) a (di,dj) offset, avoiding poison."""
     if away:
         di, dj = -di, -dj
-    order = []
     if abs(di) >= abs(dj):
         order = [DOWN if di > 0 else UP] + ([RIGHT if dj > 0 else LEFT] if dj else [])
     else:
@@ -93,6 +114,8 @@ def _move(di, dj, food, away=False):
 
 
 def decide(state, g):
+    """Hand-written instinct policy — the baseline the neural brains are
+    compared against (and the residual they build on)."""
     state = np.asarray(state, dtype=float)
     food = state[0:49].reshape(FOV, FOV)
     kin = state[98:147].reshape(FOV, FOV)
@@ -106,7 +129,7 @@ def decide(state, g):
     if hunting:
         if adj_enemy and random.random() < g["aggr"]:
             return ATK[random.choice(adj_enemy)]
-        tgt = _nearest(kin, -1, vis)            # nearest non-kin agent
+        tgt = nearest(kin, kin == -1, vis)      # nearest non-kin agent
         if tgt:
             return _move(tgt[0], tgt[1], food)
         if adj_food:                            # opportunistic graze if starving
@@ -114,10 +137,10 @@ def decide(state, g):
     else:
         if adj_food:
             return max(adj_food)[1]
-        pred = _nearest(kin, -1, 2)             # flee a close non-kin (predator)
+        pred = nearest(kin, kin == -1, 2)       # flee a close non-kin (predator)
         if pred and random.random() < (1 - g["diet"]):
             return _move(pred[0], pred[1], food, away=True)
-        tgt = _nearest(food, None, vis, sign="pos")
+        tgt = nearest(food, food > 0, vis)
         if tgt:
             return _move(tgt[0], tgt[1], food)
     return random.choice(MOVES)

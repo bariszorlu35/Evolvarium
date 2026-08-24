@@ -267,7 +267,10 @@ class Environment:
         """
         self.agents = self.grid.get_entities(self.entities.agent)
         for agent in self.agents:
-            agent.health = min(200, agent.health - 10)
+            # NOTE: this used to clamp to a hard-coded 200 rather than to the
+            # agent's own `max_health`, which silently undid any per-creature
+            # capacity above the default on every single step.
+            agent.health = min(agent.max_health, agent.health - 10)
             agent.age = min(agent.max_age, agent.age + 1)
             agent.reset_killed()
 
@@ -447,14 +450,18 @@ class Environment:
             return 0.
 
     def _get_genes(self, obj: Entity or Agent) -> int:
-        """ Lambda function to return gene value for each entity, -2 otherwise """
-        if obj.entity_type == self.entities.agent:
-            if not obj.dead:
-                return -2
-            else:
-                return obj.gene
-        else:
-            return -2
+        """ Lambda function to return gene value for each living agent, -2 otherwise
+
+        NOTE: the two branches used to be the other way round, which reported the
+        gene of *dead* agents and hid every living one behind the -2 sentinel.
+        Since `_get_observations` runs again after the dead have been swept off
+        the grid, the whole kinship channel of every observation was therefore
+        always zero: no creature could see any other creature. Predators never
+        found prey and prey never fled.
+        """
+        if obj.entity_type == self.entities.agent and not obj.dead:
+            return obj.gene
+        return -2
 
     def _add_agent(self,
                    coordinates: Collection[int] = None,
@@ -562,12 +569,19 @@ class Environment:
             However, the result could also be an empty list if there are no empty spaces
         """
         observation = self.grid.fov(agent.i, agent.j, 3)
-        loc = np.where(observation == 0)
+        # NOTE: this used to be `np.where(observation == 0)`. `observation` is an
+        # array of Entity *objects*, and an Entity never compares equal to the
+        # integer 0, so the mask was always empty and this method always returned
+        # no coordinates. Every offspring was therefore placed at a random spot
+        # somewhere in the world instead of next to its parent, which erased the
+        # spatial structure of families entirely. Compare the entity type.
+        empty = np.array([[e.entity_type for e in row] for row in observation])
+        loc = np.where(empty == self.entities.empty)
         coordinates = []
 
         for i_local, j_local in zip(loc[0], loc[1]):
-            diff_x = i_local - 3
-            diff_y = j_local - 3
+            diff_x = int(i_local) - 3
+            diff_y = int(j_local) - 3
 
             # Get coordinates if within normal range
             global_x = agent.i + diff_x

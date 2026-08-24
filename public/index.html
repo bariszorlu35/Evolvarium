@@ -1,0 +1,1293 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Evolvarium — evolving artificial life</title>
+<meta name="description" content="An open-ended artificial-life simulation. Synthetic creatures forage, hunt and breed while their neural-network brains evolve in real time — live in your browser, with no server."/>
+<meta name="color-scheme" content="dark"/>
+<meta property="og:title" content="Evolvarium — evolving artificial life"/>
+<meta property="og:description" content="Creatures forage, hunt and breed while their neural-network brains evolve in real time. Runs entirely in your browser."/>
+<meta property="og:type" content="website"/>
+<meta property="og:image" content="preview.png"/>
+<meta name="twitter:card" content="summary_large_image"/>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%2305070a'/%3E%3Crect x='7' y='8' width='7' height='7' rx='2' fill='%2339c6ff'/%3E%3Crect x='18' y='17' width='7' height='7' rx='2' fill='%23ff6a4d'/%3E%3Crect x='19' y='9' width='3' height='3' fill='%2339d17a'/%3E%3C/svg%3E"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+<style>
+/* ═══ tokens ═══════════════════════════════════════════════════════════════
+   Instrument console: near-black chassis, hairline rules instead of cards,
+   every number set in mono. The canvas is the brightest object on the page. */
+:root{
+  --bg:#05070a; --panel:#080b10; --raise:#0e131a; --void:#04060a;
+  --rule:rgba(255,255,255,.075); --rule-2:rgba(255,255,255,.145);
+  --ink:#e9eff7; --muted:#8fa1b6; --dim:#6b7c90;
+
+  --herb:#39c6ff; --carn:#ff6a4d; --plant:#39d17a;
+  --poison:#b86bff; --super:#ffd54a; --fit:#8ea8ff;
+  --on-accent:#04121a;
+
+  --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:20px; --s6:28px;
+  --s7:36px; --s8:48px; --s9:64px;
+
+  --sans:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --t1:130ms cubic-bezier(.32,.72,0,1);
+  --t2:260ms cubic-bezier(.32,.72,0,1);
+  --shell:min(1320px,100% - 2 * var(--s6));
+  --head-h:56px;
+}
+@media (max-width:700px){ :root{ --shell:min(1320px,100% - 2 * var(--s4)) } }
+
+*,*::before,*::after{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:calc(var(--head-h) + 8px)}
+@media (prefers-reduced-motion:reduce){ html{scroll-behavior:auto} }
+body{
+  margin:0;background:var(--bg);color:var(--ink);
+  font:400 16px/1.75 var(--sans);-webkit-font-smoothing:antialiased;
+  overflow-x:hidden;
+}
+/* graph-paper chassis, fading out below the fold */
+body::before{
+  content:'';position:fixed;inset:0;z-index:-1;pointer-events:none;opacity:.5;
+  background:
+    linear-gradient(var(--rule) 1px,transparent 1px) 0 0/100% 84px,
+    linear-gradient(90deg,var(--rule) 1px,transparent 1px) 0 0/84px 100%;
+  -webkit-mask-image:linear-gradient(180deg,#000 0,rgba(0,0,0,.35) 55%,transparent 100%);
+          mask-image:linear-gradient(180deg,#000 0,rgba(0,0,0,.35) 55%,transparent 100%);
+}
+h1{margin:0;font-weight:600;letter-spacing:-.02em;line-height:1.1;text-wrap:balance}
+h2{margin:0;font-weight:600;letter-spacing:-.015em;line-height:1.2;text-wrap:balance}
+h3{margin:0;font-weight:600;letter-spacing:-.01em;line-height:1.3;text-wrap:balance}
+p{margin:0}
+b,strong{font-weight:600;color:var(--ink)}
+a{color:var(--herb);text-decoration:none}
+a:hover{text-decoration:underline}
+:where(a,button,input,summary,[tabindex]):focus-visible{
+  outline:2px solid var(--herb);outline-offset:2px;border-radius:3px;
+}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;
+  clip:rect(0 0 0 0);white-space:nowrap;border:0}
+.skip{
+  position:absolute;left:var(--s4);top:-60px;z-index:120;background:var(--herb);
+  color:var(--on-accent);padding:9px 14px;font:600 13px var(--mono);transition:top var(--t1);
+}
+.skip:focus{top:var(--s4);text-decoration:none}
+
+.shell{width:var(--shell);margin-inline:auto}
+/* the chassis rails: two hairlines running the whole length of the page */
+.chassis{width:var(--shell);margin-inline:auto;border-inline:1px solid var(--rule)}
+@media (max-width:900px){ .chassis{border-inline:0} }
+.pad{padding-inline:clamp(var(--s4),3vw,var(--s6))}
+
+/* ═══ header ═══════════════════════════════════════════════════════════════ */
+header.top{
+  position:sticky;top:0;z-index:60;
+  background:rgba(5,7,10,.82);backdrop-filter:blur(12px) saturate(160%);
+  border-bottom:1px solid var(--rule);
+}
+.top-in{display:flex;align-items:center;gap:var(--s4);height:var(--head-h)}
+.brand{display:flex;align-items:center;gap:9px;color:var(--ink);
+  font:600 14px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase}
+.brand:hover{text-decoration:none}
+.mark{display:block;flex:none}
+.pulse{width:7px;height:7px;background:var(--dim);flex:none;
+  transition:background var(--t2),box-shadow var(--t2)}
+.pulse.live{background:var(--plant);box-shadow:0 0 0 3px rgba(57,209,122,.15)}
+nav.top-nav{display:flex;gap:2px;margin-left:auto}
+nav.top-nav a{
+  color:var(--muted);font:500 12px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;
+  padding:9px 11px;white-space:nowrap;transition:color var(--t1),background var(--t1);
+}
+nav.top-nav a:hover{color:var(--ink);background:var(--raise);text-decoration:none}
+@media (max-width:900px){ nav.top-nav a.opt{display:none} }
+@media (max-width:640px){ nav.top-nav{display:none} .top-in>.ghost{margin-left:auto} }
+.ghost{
+  display:inline-flex;align-items:center;gap:7px;min-height:32px;padding:0 11px;
+  border:1px solid var(--rule-2);color:var(--ink);background:transparent;cursor:pointer;
+  font:500 12px/1 var(--mono);letter-spacing:.06em;
+  transition:background var(--t1),border-color var(--t1);
+}
+.ghost:hover{background:var(--raise);border-color:rgba(255,255,255,.3);text-decoration:none}
+
+/* ═══ hero ═════════════════════════════════════════════════════════════════ */
+.hero{padding:calc(var(--s8) * 1.5) 0 calc(var(--s7) * 1.5)}
+.eyebrow{
+  display:flex;align-items:center;gap:10px;margin-bottom:var(--s5);
+  font:500 10.5px/1 var(--mono);letter-spacing:.22em;text-transform:uppercase;color:var(--dim);
+}
+.eyebrow::after{content:'';flex:1;height:1px;background:var(--rule)}
+.hero h1{font-size:clamp(30px,4.6vw,52px);max-width:19ch}
+.hero h1 em{font-style:normal;color:var(--herb)}
+.lede{margin-top:var(--s5);max-width:64ch;color:var(--muted);font-size:17px}
+.specs{
+  display:grid;grid-template-columns:repeat(4,1fr);margin-top:var(--s7);
+  border-top:1px solid var(--rule);border-left:1px solid var(--rule);
+}
+@media (max-width:680px){ .specs{grid-template-columns:repeat(2,1fr)} }
+.spec{padding:var(--s4) var(--s4) var(--s4) var(--s4);
+  border-right:1px solid var(--rule);border-bottom:1px solid var(--rule)}
+.spec .v{font:600 clamp(19px,2.4vw,25px)/1 var(--mono);letter-spacing:-.02em}
+.spec .k{margin-top:7px;font:500 9.5px/1.5 var(--mono);letter-spacing:.16em;
+  text-transform:uppercase;color:var(--dim)}
+
+/* ═══ the lab ══════════════════════════════════════════════════════════════ */
+.lab{display:grid;grid-template-columns:minmax(0,1fr) minmax(320px,392px);
+  gap:calc(var(--s5) * 1.5);padding-bottom:calc(var(--s8) * 1.5);align-items:start}
+@media (max-width:1060px){ .lab{grid-template-columns:minmax(0,1fr)} }
+
+.scope{border:1px solid var(--rule-2);background:var(--panel)}
+.hud{display:flex;flex-wrap:wrap;border-bottom:1px solid var(--rule)}
+.hud .cellx{
+  display:flex;align-items:baseline;gap:7px;padding:9px 13px;
+  border-right:1px solid var(--rule);font:500 11px/1 var(--mono);letter-spacing:.14em;
+  text-transform:uppercase;color:var(--dim);
+}
+.hud .cellx b{font-weight:600;letter-spacing:.02em;text-transform:none;color:var(--ink);font-size:12.5px}
+.hud .cellx.state{gap:8px;align-items:center;color:var(--muted)}
+.hud .cellx.state .dot{width:6px;height:6px;background:var(--dim);flex:none}
+.hud .cellx.state.on .dot{background:var(--plant);box-shadow:0 0 0 3px rgba(57,209,122,.14)}
+.hud .cellx.h b{color:var(--herb)} .hud .cellx.c b{color:var(--carn)}
+.hud .grow{flex:1;border-right:0}
+@media (max-width:560px){ .hud .cellx.opt{display:none} }
+
+.stage{position:relative;background:var(--void);line-height:0}
+.stage canvas{display:block;width:100%;height:auto}
+/* corner registration marks — the world reads as an instrument screen */
+.stage::before{
+  content:'';position:absolute;inset:0;z-index:2;pointer-events:none;
+  --m:rgba(255,255,255,.3);
+  background:
+    linear-gradient(var(--m),var(--m)) 0 0/11px 1px no-repeat,
+    linear-gradient(var(--m),var(--m)) 0 0/1px 11px no-repeat,
+    linear-gradient(var(--m),var(--m)) 100% 0/11px 1px no-repeat,
+    linear-gradient(var(--m),var(--m)) 100% 0/1px 11px no-repeat,
+    linear-gradient(var(--m),var(--m)) 0 100%/11px 1px no-repeat,
+    linear-gradient(var(--m),var(--m)) 0 100%/1px 11px no-repeat,
+    linear-gradient(var(--m),var(--m)) 100% 100%/11px 1px no-repeat,
+    linear-gradient(var(--m),var(--m)) 100% 100%/1px 11px no-repeat;
+}
+.veil{
+  position:absolute;inset:0;z-index:3;display:none;place-items:center;padding:var(--s5);
+  background:rgba(4,6,10,.9);backdrop-filter:blur(3px);text-align:center;line-height:1.6;
+}
+.veil.show{display:grid}
+.veil p{max-width:44ch;color:var(--muted);font-size:14px;margin-bottom:var(--s4)}
+
+.legend{
+  display:flex;flex-wrap:wrap;gap:var(--s2) var(--s4);padding:10px 13px;
+  border-top:1px solid var(--rule);
+  font:500 10.5px/1.6 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--muted);
+}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.chip{width:9px;height:9px;flex:none}
+.chip.round{border-radius:50%}
+.ramp{width:34px;height:8px;flex:none}
+.ramp.h{background:linear-gradient(90deg,#5be0ff,#2f7fe0)}
+.ramp.c{background:linear-gradient(90deg,#ffa04d,#ff3d3d)}
+
+/* readout rail */
+.rail{border:1px solid var(--rule-2);background:var(--panel)}
+.mod{padding:var(--s4) var(--s4) var(--s5);border-top:1px solid var(--rule)}
+.mod:first-child{border-top:0}
+.label{
+  display:flex;align-items:center;gap:10px;margin-bottom:var(--s4);
+  font:500 10.5px/1 var(--mono);letter-spacing:.2em;text-transform:uppercase;color:var(--dim);
+}
+.label::after{content:'';flex:1;height:1px;background:var(--rule)}
+.label .note{letter-spacing:.08em;color:var(--dim);opacity:.75;text-transform:none}
+
+.controls{display:grid;grid-template-columns:1fr 1fr;gap:calc(5px * 1.5)}
+.controls .btn.wide{grid-column:1/-1}
+.btn{
+  display:inline-flex;align-items:center;gap:calc(7px * 1.5);min-height:calc(34px * 1.2);padding:0 calc(10px * 1.5);
+  border:1px solid var(--rule-2);background:transparent;color:var(--ink);cursor:pointer;
+  font:500 12px/1 var(--mono);letter-spacing:.02em;text-align:left;
+  transition:background var(--t1),border-color var(--t1),color var(--t1);
+}
+.btn:hover{background:var(--raise);border-color:rgba(255,255,255,.3)}
+.btn svg{flex:none;opacity:.9}
+.btn.primary{background:var(--herb);border-color:var(--herb);color:var(--on-accent);font-weight:600}
+.btn.primary:hover{background:#5bd3ff;border-color:#5bd3ff;transform:translateY(-1px);}
+.btn[aria-pressed="false"]{color:var(--muted)}
+.btn[aria-pressed="false"] svg{opacity:.55}
+.keys{margin-top:11px;font:500 10px/1.7 var(--mono);letter-spacing:.08em;color:var(--dim)}
+.keys kbd{font:inherit;border:1px solid var(--rule);padding:1px 4px;color:var(--muted)}
+
+.slider{display:block;margin-top:calc(var(--s4) * 1.5)}
+.slider .lbl{display:flex;justify-content:space-between;align-items:baseline;gap:calc(8px * 1.5);
+  margin-bottom:calc(7px * 1.5);font:500 10.5px/1 var(--mono);letter-spacing:.14em;
+  text-transform:uppercase;color:var(--dim)}
+.slider .lbl b{color:var(--ink);letter-spacing:.02em;text-transform:none;font-size:12px}
+input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:16px;
+  background:transparent;cursor:pointer;display:block}
+input[type=range]::-webkit-slider-runnable-track{height:2px;background:var(--rule-2)}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:11px;height:11px;
+  margin-top:-4.5px;background:var(--ink);border:0}
+input[type=range]::-moz-range-track{height:2px;background:var(--rule-2)}
+input[type=range]::-moz-range-thumb{width:11px;height:11px;background:var(--ink);border:0;border-radius:0}
+input[type=range]:hover::-webkit-slider-thumb{background:var(--herb)}
+input[type=range]:hover::-moz-range-thumb{background:var(--herb)}
+
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:calc(1px * 1.5);background:var(--rule);
+  border:1px solid var(--rule);margin-bottom:calc(var(--s4) * 1.5)}
+.stat{background:var(--panel);padding:calc(11px * 1.5) calc(12px * 1.5)}
+.stat .v{font:600 24px/1 var(--mono);letter-spacing:-.03em}
+.stat .k{margin-top:6px;font:500 9.5px/1 var(--mono);letter-spacing:.16em;
+  text-transform:uppercase;color:var(--dim)}
+
+/* leader-dot rows — the script injects .kv, so the leader is pure CSS */
+.kv{display:flex;align-items:baseline;gap:calc(10px * 1.5);padding:calc(6px * 1.5) 0;font-size:13px;color:var(--muted)}
+.kv>span{flex:1;display:flex;align-items:baseline;gap:calc(8px * 1.5);min-width:0}
+.kv>span::after{content:'';flex:1;height:0;border-bottom:1px dotted rgba(255,255,255,.16);
+  transform:translateY(-6px)}
+.kv>b{font:500 15px/1 var(--mono);color:var(--ink);white-space:nowrap}
+.bar{height:3px;background:var(--rule);overflow:hidden;margin-top:calc(5px * 1.5)}
+.bar i{display:block;height:100%}
+.pill{display:inline-flex;align-items:center;padding:calc(3px * 1.5) calc(7px * 1.5);border:1px solid;
+  font:600 10.5px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase}
+.pill.h{color:var(--herb);border-color:rgba(57,198,255,.4);background:rgba(57,198,255,.08)}
+.pill.c{color:var(--carn);border-color:rgba(255,106,77,.4);background:rgba(255,106,77,.08)}
+.swatch{width:12px;height:12px;flex:none;box-shadow:inset 0 0 0 1px rgba(255,255,255,.22)}
+.empty{color:var(--dim);font-size:13px;line-height:1.8}
+.plot{width:100%;display:block}
+.plot-legend{display:flex;gap:calc(var(--s4) * 1.5);margin-top:calc(9px * 1.5);
+  font:500 10px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.plot-legend span{display:inline-flex;align-items:center;gap:calc(6px * 1.5)}
+.valley{margin-top:calc(8px * 1.5)}
+.valley .cap{display:flex;justify-content:space-between;
+  font:500 9.5px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--dim);gap:calc(10px * 1.5)}
+
+/* ═══ editorial ════════════════════════════════════════════════════════════ */
+.story{padding:calc(var(--s9) * 1.5) 0;border-top:1px solid var(--rule)}
+.sec-head{max-width:68ch;margin-bottom:calc(var(--s7) * 1.5)}
+.sec-head h2{font-size:clamp(25px,3.2vw,37px);margin-bottom:var(--s4)}
+.sec-head p{color:var(--muted);max-width:62ch}
+.lattice{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));
+  border-top:1px solid var(--rule);border-left:1px solid var(--rule)}
+.lattice.three{grid-template-columns:repeat(3,minmax(0,1fr))}
+@media (max-width:860px){ .lattice,.lattice.three{grid-template-columns:minmax(0,1fr)} }
+.chapter{padding:calc(var(--s5) * 1.5) calc(var(--s5) * 1.5) calc(var(--s6) * 1.5);
+  border-right:1px solid var(--rule);border-bottom:1px solid var(--rule)}
+.chapter .n{font:600 10.5px/1 var(--mono);letter-spacing:.2em;color:var(--dim);margin-bottom:var(--s3)}
+.chapter h3{font-size:19px;margin-bottom:var(--s3)}
+.chapter p{color:var(--muted);font-size:15px}
+.fig{margin-top:calc(var(--s5) * 1.5);border:1px solid var(--rule);background:var(--void);padding:calc(var(--s3) * 1.5)}
+.fig svg{display:block;width:100%;height:auto}
+.ladder{display:grid;gap:calc(var(--s3) * 1.5)}
+.rung{display:grid;grid-template-columns:88px 1fr 44px;align-items:center;gap:calc(var(--s2) * 1.5);
+  font:500 10.5px/1 var(--mono);letter-spacing:.06em;color:var(--muted)}
+.rung .track{height:6px;background:rgba(255,255,255,.05)}
+.rung .track i{display:block;height:100%}
+.rung .num{text-align:right;color:var(--ink)}
+.rung.neg .num{color:var(--poison)}
+
+.brainfig{border:1px solid var(--rule-2);background:var(--void);padding:calc(var(--s5) * 1.5);position:relative}
+.brainfig svg{display:block;width:100%;height:auto}
+.brainfig::before{
+  content:'';position:absolute;inset:-1px;pointer-events:none;--m:rgba(255,255,255,.26);
+  background:
+    linear-gradient(var(--m),var(--m)) 0 0/11px 1px no-repeat,
+    linear-gradient(var(--m),var(--m)) 0 0/1px 11px no-repeat,
+    linear-gradient(var(--m),var(--m)) 100% 100%/11px 1px no-repeat,
+    linear-gradient(var(--m),var(--m)) 100% 100%/1px 11px no-repeat;
+}
+
+/* ═══ code blocks ═════════════════════════════════════════════════════════ */
+.cb{border:1px solid var(--rule-2);background:var(--void);padding:calc(var(--s4) * 1.5)}
+.cb-head{display:flex;align-items:center;justify-content:space-between;gap:calc(var(--s4) * 1.5);
+  padding:8px 12px;border-bottom:1px solid var(--rule)}
+.cb-lang{display:inline-flex;align-items:center;gap:7px;
+  font:500 10.5px/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--dim)}
+.copy{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--rule);
+  background:transparent;color:var(--muted);cursor:pointer;padding:calc((4px) * 1.5) calc((8px) * 1.5);
+  font:500 11px/1 var(--mono);transition:color var(--t1),border-color var(--t1)}
+.copy:hover{color:var(--ink);border-color:var(--rule-2)}
+.copy.done{color:var(--plant);border-color:rgba(57,209,122,.4)}
+.cb pre{margin:0;padding:calc(var(--s4) * 1.5) calc(var(--s4) * 1.5) calc(var(--s4) * 1.5) 0;overflow-x:auto;
+  font:400 12.5px/1.85 var(--mono);color:#cfe0f0;counter-reset:ln}
+.cb pre .l{display:block;counter-increment:ln;padding-left:52px;position:relative;white-space:pre}
+.cb pre .l::before{content:counter(ln);position:absolute;left:0;width:36px;text-align:right;
+  color:rgba(255,255,255,.2)}
+.cb pre .c{color:var(--dim)}
+.cb pre .k{color:var(--herb)}
+
+.tablewrap{overflow-x:auto;border:1px solid var(--rule);padding:calc(var(--s4) * 1.5)}
+table.api{border-collapse:collapse;width:100%;min-width:520px;font-size:14px}
+table.api th,table.api td{text-align:left;padding:calc((11px) * 1.5) calc((14px) * 1.5);border-bottom:1px solid var(--rule)}
+table.api tr:last-child td{border-bottom:0}
+table.api th{font:500 9.5px/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;
+  color:var(--dim);background:rgba(255,255,255,.02)}
+table.api td:first-child{font:500 12.5px/1 var(--mono);color:var(--herb);white-space:nowrap;width:1%}
+table.api td:last-child{color:var(--muted)}
+
+/* ═══ footer ═══════════════════════════════════════════════════════════════ */
+footer{border-top:1px solid var(--rule);padding:calc(var(--s6) * 1.5) 0;
+  font:500 11.5px/1.8 var(--mono);color:var(--dim);letter-spacing:.04em}
+.foot-in{display:flex;flex-wrap:wrap;gap:calc(var(--s4) * 1.5) calc(var(--s6) * 1.5);align-items:baseline}
+.foot-links{display:flex;flex-wrap:wrap;gap:var(--s4);margin-left:auto}
+.foot-links a{color:var(--muted)}
+
+.duo{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:calc(var(--s7) * 1.5) calc(var(--s6) * 1.5)}
+@media (max-width:860px){ .duo{grid-template-columns:minmax(0,1fr)} }
+.subh{font-size:17px;margin-bottom:calc(var(--s4) * 1.5);display:flex;align-items:baseline;gap:calc(10px * 1.5)}
+.subh .ix{font:600 10.5px/1 var(--mono);letter-spacing:.18em;color:var(--dim)}
+.after{margin-top:calc(var(--s4) * 1.5);color:var(--dim);font-size:14px;line-height:1.7;max-width:56ch}
+.block-h3{font-size:17px;margin:calc(var(--s8) * 1.5) 0 calc(var(--s4) * 1.5)}
+</style>
+</head>
+<body>
+<a class="skip" href="#lab">Skip to the simulation</a>
+
+<header class="top">
+  <div class="shell top-in">
+    <a class="brand" href="#top">
+      <svg class="mark" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <rect x="3" y="4" width="7" height="7" rx="2" fill="#39c6ff"/>
+        <rect x="13" y="13" width="7" height="7" rx="2" fill="#ff6a4d"/>
+        <rect x="15" y="5" width="3.4" height="3.4" fill="#39d17a"/>
+        <rect x="5.5" y="15.5" width="3.4" height="3.4" fill="#39d17a"/>
+      </svg>
+      Evolvarium
+    </a>
+    <span class="pulse" id="pulse" aria-hidden="true"></span>
+    <nav class="top-nav" aria-label="Sections">
+      <a href="#lab">Simulation</a>
+      <a href="#rules" class="opt">Rules</a>
+      <a href="#brain" class="opt">Brain</a>
+      <a href="#run">Run it</a>
+    </nav>
+    <a class="ghost" href="https://github.com/bariszorlu35/Evolvarium" rel="noopener" target="_blank"
+       aria-label="Evolvarium on GitHub, opens in a new tab">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <path d="M12 2a10 10 0 0 0-3.16 19.49c.5.09.68-.22.68-.48l-.01-1.7c-2.78.6-3.37-1.34-3.37-1.34-.45-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.89 1.53 2.34 1.09 2.91.83.09-.65.35-1.09.63-1.34-2.22-.25-4.55-1.11-4.55-4.94 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.65 0 0 .84-.27 2.75 1.02a9.5 9.5 0 0 1 5 0c1.91-1.29 2.75-1.02 2.75-1.02.55 1.38.2 2.4.1 2.65.64.7 1.03 1.59 1.03 2.68 0 3.84-2.34 4.68-4.57 4.93.36.31.68.92.68 1.85l-.01 2.75c0 .27.18.58.69.48A10 10 0 0 0 12 2Z"/>
+      </svg>
+      <span aria-hidden="true">GitHub</span>
+    </a>
+  </div>
+</header>
+
+<div class="chassis">
+<main id="top">
+
+<section class="pad hero">
+  <p class="eyebrow">Open-ended artificial life · running live in this tab</p>
+  <h1>Evolution isn't a metaphor here. <em>It runs while you watch.</em></h1>
+  <p class="lede">
+    Synthetic creatures forage, hunt and breed in a small wrap-around world. Every one of them
+    carries a <b>708-weight neural network</b> that its parents passed on, mutated. Nothing is
+    trained and nothing is scripted — the only thing selecting the brains is
+    <b>whether their owner lived long enough to reproduce</b>.
+  </p>
+  <div class="specs">
+    <div class="spec"><div class="v" style="color:var(--herb)">34 × 34</div><div class="k">wrap-around grid</div></div>
+    <div class="spec"><div class="v">708</div><div class="k">weights per brain</div></div>
+    <div class="spec"><div class="v" style="color:var(--plant)">153</div><div class="k">values seen per tick</div></div>
+    <div class="spec"><div class="v" style="color:var(--carn)">0</div><div class="k">training steps</div></div>
+  </div>
+</section>
+
+<section class="pad lab" id="lab" aria-label="Live simulation">
+
+  <!-- ── the scope ── -->
+  <div class="scope">
+    <div class="hud">
+      <div class="cellx state" id="hudState"><span class="dot" aria-hidden="true"></span><b id="hudRun">Running</b></div>
+      <div class="cellx">Tick <b id="hudTick">0</b></div>
+      <div class="cellx">Pop <b id="hudPop">–</b></div>
+      <div class="cellx opt">Gen <b id="hudGen">–</b></div>
+      <div class="cellx h opt">Herb <b id="hudHerb">–</b></div>
+      <div class="cellx c opt">Carn <b id="hudCarn">–</b></div>
+      <div class="cellx grow opt" style="justify-content:flex-end">Mode <b id="hudMode">Neural</b></div>
+    </div>
+    <div class="stage">
+      <canvas id="world" role="img"
+        aria-label="Live view of the world: cyan and blue squares are herbivores, orange and red squares are carnivores, green dots are plants."></canvas>
+      <div class="veil" id="veil">
+        <div style="display:grid;justify-items:center">
+          <p>Motion is reduced in your system settings, so the world starts still. Press start whenever
+          you're ready — you can pause it again at any time.</p>
+          <button class="btn primary" id="btnStart" type="button">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13l11-6.5-11-6.5Z"/></svg>
+            Start the world
+          </button>
+        </div>
+      </div>
+    </div>
+    <div class="legend">
+      <span>Herbivore <i class="ramp h" aria-hidden="true"></i></span>
+      <span>Carnivore <i class="ramp c" aria-hidden="true"></i></span>
+      <span><i class="chip round" style="background:var(--plant)" aria-hidden="true"></i>Plant</span>
+      <span><i class="chip" style="background:var(--poison)" aria-hidden="true"></i>Poison</span>
+      <span><i class="chip round" style="background:var(--super)" aria-hidden="true"></i>Super plant</span>
+      <span style="color:var(--dim)">Edges wrap</span>
+    </div>
+  </div>
+
+  <!-- ── the readout rail ── -->
+  <aside class="rail">
+
+    <section class="mod">
+      <h2 class="label">Controls</h2>
+      <div class="controls">
+        <button class="btn primary wide" id="btnToggle" type="button" aria-describedby="runState">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" id="icoToggle"><path d="M7 5h3.4v14H7zM13.6 5H17v14h-3.4z"/></svg>
+          <span id="lblToggle">Pause</span>
+        </button>
+        <button class="btn" id="btnStep" type="button">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 5.5v13l9-6.5-9-6.5ZM16.5 5H19v14h-2.5z"/></svg>
+          Step Forward
+        </button>
+        <button class="btn" id="btnFood" type="button">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M5 20c0-7 4-11 11-12 1 7-3 11-8 12M8 17c1-3 3-5 6-6"/></svg>
+          Add Plants
+        </button>
+        <button class="btn" id="btnBrain" type="button" aria-pressed="true">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5.5a3 3 0 0 0-5.7-1.3A2.8 2.8 0 0 0 4 9.4a3 3 0 0 0 .6 5.2A2.9 2.9 0 0 0 9 19a3 3 0 0 0 3-1.6Zm0 0a3 3 0 0 1 5.7-1.3A2.8 2.8 0 0 1 20 9.4a3 3 0 0 1-.6 5.2A2.9 2.9 0 0 1 15 19a3 3 0 0 1-3-1.6Z"/></svg>
+          <span id="lblBrain">Neural Network ↔ Instinct</span>
+        </button>
+        <button class="btn" id="btnPick" type="button">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>
+          Inspect Creature
+        </button>
+        <button class="btn" id="btnReset" type="button">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 5v6h-6"/></svg>
+          Reset World
+        </button>
+      </div>
+      <p id="runState" class="sr-only" role="status" aria-live="polite">The world is running.</p>
+      <p class="keys" aria-hidden="true">
+        <kbd>Spacebar</kbd> Start/Pause simulation · <kbd>S</kbd> Step forward one tick · <kbd>F</kbd> Add new plants · <kbd>B</kbd> Toggle Neural Network/Instinct
+      </p>
+      <label class="slider" for="fps">
+        <span class="lbl">Simulation Speed <b><span id="fpsVal">10</span> ticks per second</b></span>
+        <input type="range" id="fps" min="1" max="30" step="1" value="10"/>
+      </label>
+      <label class="slider" for="mut">
+        <span class="lbl">Mutation Rate <b id="mutVal">0.08</b></span>
+        <input type="range" id="mut" min="0" max="0.3" step="0.01" value="0.08"/>
+      </label>
+    </section>
+
+    <section class="mod">
+      <h2 class="label">Census</h2>
+      <div class="stats">
+        <div class="stat"><div class="v" id="sPop">–</div><div class="k">Population</div></div>
+        <div class="stat"><div class="v" id="sGen">–</div><div class="k">Generation</div></div>
+        <div class="stat"><div class="v" id="sHerb" style="color:var(--herb)">–</div><div class="k">Herbivores</div></div>
+        <div class="stat"><div class="v" id="sCarn" style="color:var(--carn)">–</div><div class="k">Carnivores</div></div>
+      </div>
+      <div class="kv"><span>Tick</span><b id="sTick">0</b></div>
+      <div class="kv"><span>Average fitness</span><b id="sFit">–</b></div>
+      <div class="kv"><span>Average age</span><b id="sAge">–</b></div>
+      <div class="kv"><span>Births / deaths</span><b id="sBD">–</b></div>
+      <div class="kv"><span>Founders sent in</span><b id="sImm">–</b></div>
+    </section>
+
+    <section class="mod">
+      <h2 class="label">Populations <span class="note">last 240 ticks</span></h2>
+      <canvas class="plot" id="plotPop" height="240" aria-hidden="true"></canvas>
+      <div class="plot-legend">
+        <span><i class="chip" style="background:var(--herb)" aria-hidden="true"></i>Herbivores</span>
+        <span><i class="chip" style="background:var(--carn)" aria-hidden="true"></i>Carnivores</span>
+      </div>
+      <p class="sr-only" role="status" aria-live="off" id="plotPopAlt"></p>
+    </section>
+
+    <section class="mod">
+      <h2 class="label">Diet spectrum</h2>
+      <canvas class="plot" id="plotDiet" height="200" aria-hidden="true"></canvas>
+      <div class="valley"><div class="cap"><span>all plants</span><span>all meat</span></div></div>
+      <p class="empty" style="margin-top:10px">
+        Living creatures binned by diet. The middle stays empty because a half-and-half diet feeds
+        on neither side — that gap is the population splitting in two.
+      </p>
+    </section>
+
+    <section class="mod">
+      <h2 class="label">Inspector</h2>
+      <div id="selBody" class="empty" style="text-align:center; padding:calc(var(--s4) * 1.5)">
+        Click any creature in the world — or press <b style="color:var(--muted)">Inspect</b> — to read
+        its diet, its brain and its life so far.
+      </div>
+    </section>
+
+    <section class="mod">
+      <h2 class="label">Best life so far</h2>
+      <div id="bestBody" class="empty" style="text-align:center; padding:calc(var(--s4) * 1.5)">
+        Nobody has finished a life yet. When one does, the highest-scoring life the world has ever
+        produced is recorded here — and its genome is kept as a founder for the next reset.
+      </div>
+    </section>
+
+  </aside>
+</section>
+
+<section class="story" id="rules">
+  <div class="pad">
+    <div class="sec-head">
+      <p class="eyebrow">What you are watching</p>
+      <h2>Four rules, and everything else is a consequence</h2>
+      <p>The world has no goals, no score and no training loop. It has a food chain, a cost of
+      living and inheritance. Every pattern on the canvas above falls out of those.</p>
+    </div>
+
+    <div class="lattice">
+      <article class="chapter">
+        <div class="n">01</div>
+        <h3>Two ways to make a living</h3>
+        <p>Nutrition depends on diet. A plant is worth <b>50</b> health to a pure grazer but almost
+        nothing to a specialist predator; a kill is worth <b>170</b> to the predator and almost
+        nothing to the grazer. A diet stuck halfway is the worst of both — so the population
+        splits, and colour tells you which side a lineage picked.</p>
+        <div class="fig">
+          <svg viewBox="0 0 340 92" role="img" aria-label="A U-shaped curve: income is high at a pure-plant diet, collapses in the middle, and rises again at a pure-meat diet.">
+            <defs>
+              <linearGradient id="gvalley" x1="0" x2="1">
+                <stop offset="0%" stop-color="#39c6ff"/><stop offset="46%" stop-color="#5f7590"/>
+                <stop offset="54%" stop-color="#96707a"/><stop offset="100%" stop-color="#ff6a4d"/>
+              </linearGradient>
+            </defs>
+            <line x1="12" y1="76" x2="330" y2="76" stroke="rgba(255,255,255,.12)"/>
+            <path d="M12 20C70 30 118 66 171 68c53 2 101-40 159-52" fill="none"
+                  stroke="url(#gvalley)" stroke-width="2.5" stroke-linecap="round"/>
+            <circle cx="12" cy="20" r="4" fill="#39c6ff"/><circle cx="330" cy="16" r="4" fill="#ff6a4d"/>
+            <text x="12" y="90" fill="#6b7c90" font-size="9.5" font-family="JetBrains Mono, monospace">GRAZER</text>
+            <text x="150" y="90" fill="#6b7c90" font-size="9.5" font-family="JetBrains Mono, monospace">THE VALLEY</text>
+            <text x="292" y="90" fill="#6b7c90" font-size="9.5" font-family="JetBrains Mono, monospace">HUNTER</text>
+          </svg>
+        </div>
+      </article>
+
+      <article class="chapter">
+        <div class="n">02</div>
+        <h3>Reproduction is earned</h3>
+        <p>Breeding needs health above half and costs <b>50</b> of it, and a creature burns
+        <b>10</b> health every tick just existing. Only creatures that actually feed themselves
+        leave offspring. That single constraint is the entire selection pressure — there is no
+        fitness function anywhere in the loop.</p>
+        <div class="fig">
+          <div class="ladder">
+            <div class="rung"><span class="name">Metabolism</span><span class="track"><i style="width:12%;background:#5f7590"></i></span><span class="num">−10</span></div>
+            <div class="rung"><span class="name">Plant eaten</span><span class="track"><i style="width:29%;background:var(--plant)"></i></span><span class="num">+50</span></div>
+            <div class="rung"><span class="name">Kill made</span><span class="track"><i style="width:100%;background:var(--carn)"></i></span><span class="num">+170</span></div>
+            <div class="rung neg"><span class="name">Poison</span><span class="track"><i style="width:23%;background:var(--poison)"></i></span><span class="num">−40</span></div>
+            <div class="rung"><span class="name">Giving birth</span><span class="track"><i style="width:29%;background:#5f7590"></i></span><span class="num">−50</span></div>
+          </div>
+        </div>
+      </article>
+
+      <article class="chapter">
+        <div class="n">03</div>
+        <h3>Real inheritance</h3>
+        <p>Offspring take their actual parent's network weights, usually recombined with a nearby
+        mate by uniform crossover, then mutated. Diet, aggression, vision and even the
+        <b>mutation rate itself</b> are heritable — so lineages evolve how fast they evolve.
+        Weights decay slightly toward zero and are clipped, which keeps an old lineage competent
+        instead of letting drift swamp it.</p>
+        <div class="fig">
+          <svg viewBox="0 0 340 92" role="img" aria-label="Two parent genomes recombine into a child genome, which is then mutated.">
+            <rect x="8" y="12" width="86" height="22" rx="4" fill="rgba(57,198,255,.16)" stroke="#39c6ff" stroke-width="1"/>
+            <rect x="8" y="56" width="86" height="22" rx="4" fill="rgba(57,198,255,.08)" stroke="rgba(57,198,255,.5)" stroke-width="1"/>
+            <text x="20" y="27" fill="#39c6ff" font-size="10" font-family="JetBrains Mono, monospace">parent</text>
+            <text x="20" y="71" fill="#7fd4ff" font-size="10" font-family="JetBrains Mono, monospace">mate</text>
+            <path d="M96 23h44c8 0 8 22 16 22M96 67h44c8 0 8-22 16-22" fill="none" stroke="rgba(255,255,255,.22)" stroke-width="1.4"/>
+            <rect x="158" y="34" width="72" height="22" rx="4" fill="rgba(255,255,255,.07)" stroke="rgba(255,255,255,.28)"/>
+            <text x="168" y="49" fill="#e9eff7" font-size="10" font-family="JetBrains Mono, monospace">crossover</text>
+            <path d="M232 45h24" stroke="rgba(255,255,255,.22)" stroke-width="1.4"/>
+            <rect x="258" y="34" width="74" height="22" rx="4" fill="rgba(57,209,122,.14)" stroke="#39d17a"/>
+            <text x="270" y="49" fill="#39d17a" font-size="10" font-family="JetBrains Mono, monospace">mutate</text>
+          </svg>
+        </div>
+      </article>
+
+      <article class="chapter">
+        <div class="n">04</div>
+        <h3>A world with a carrying capacity</h3>
+        <p>Plants regrow toward a fixed density, so grazing genuinely depletes a patch and creatures
+        have to keep moving. Predators boom, crash the prey, then crash themselves — the population
+        chart draws that cycle on its own. If a whole way of life is lost to bad luck, founders
+        eventually arrive from elsewhere, and the census counts them.</p>
+        <div class="fig">
+          <svg viewBox="0 0 340 92" role="img" aria-label="Two out-of-phase waves: the predator peak trails the prey peak.">
+            <line x1="8" y1="50" x2="332" y2="50" stroke="rgba(255,255,255,.1)"/>
+            <path d="M8 62C44 20 70 20 104 62s58 44 92 2 62-44 96-2" fill="none" stroke="#39c6ff" stroke-width="2.2" stroke-linecap="round"/>
+            <path d="M8 44C44 66 78 66 112 30s54-6 88 36 60 6 92-30" fill="none" stroke="#ff6a4d" stroke-width="2.2" stroke-linecap="round" opacity=".95"/>
+            <text x="8" y="88" fill="#6b7c90" font-size="9.5" font-family="JetBrains Mono, monospace">PREY PEAK → PREDATOR PEAK → CRASH</text>
+          </svg>
+        </div>
+      </article>
+    </div>
+  </div>
+</section>
+
+<section class="story" id="brain">
+  <div class="pad">
+    <div class="sec-head">
+      <p class="eyebrow">Inside a creature</p>
+      <h2>Instinct, plus whatever evolution can add to it</h2>
+      <p>Each creature sees three 7×7 wrap-around views around itself — plants, health, kinship —
+      plus six scalars. That is compressed into 26 features and fed to a hand-written survival
+      drive. The evolved network never replaces that drive; it adds a bounded correction on top,
+      which is exactly what the <b>Neural net ↔ Instinct</b> button lets you switch off.</p>
+    </div>
+
+    <div class="brainfig">
+      <svg viewBox="0 0 720 200" role="img" aria-label="Diagram: a 153-value observation becomes 26 features, which feed both a fixed instinct policy and a 26 by 20 by 8 network; their outputs are summed and sampled as one of eight actions.">
+        <defs>
+          <marker id="ar" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+            <path d="M0 0 8 4 0 8z" fill="rgba(255,255,255,.35)"/>
+          </marker>
+        </defs>
+        <g font-family="JetBrains Mono, monospace" font-size="10.5">
+          <rect x="8" y="66" width="104" height="62" rx="4" fill="rgba(57,209,122,.10)" stroke="rgba(57,209,122,.55)"/>
+          <text x="30" y="90" fill="#39d17a">153 seen</text>
+          <text x="22" y="108" fill="#6b7c90" font-size="9">3 × 7×7 + 6</text>
+
+          <path d="M114 97h36" stroke="rgba(255,255,255,.35)" marker-end="url(#ar)"/>
+          <rect x="152" y="66" width="96" height="62" rx="4" fill="rgba(255,255,255,.05)" stroke="rgba(255,255,255,.22)"/>
+          <text x="170" y="90" fill="#e9eff7">26 feats</text>
+          <text x="164" y="108" fill="#6b7c90" font-size="9">+ last action</text>
+
+          <path d="M250 84h44" stroke="rgba(255,255,255,.35)" marker-end="url(#ar)"/>
+          <path d="M250 112h44" stroke="rgba(255,255,255,.35)" marker-end="url(#ar)"/>
+
+          <rect x="296" y="20" width="150" height="52" rx="4" fill="rgba(255,255,255,.04)" stroke="rgba(255,255,255,.2)" stroke-dasharray="4 3"/>
+          <text x="316" y="42" fill="#8fa1b6">instinct (fixed)</text>
+          <text x="316" y="59" fill="#6b7c90" font-size="9">chase · flee · bite</text>
+
+          <rect x="296" y="122" width="150" height="58" rx="4" fill="rgba(57,198,255,.10)" stroke="rgba(57,198,255,.55)"/>
+          <text x="316" y="145" fill="#39c6ff">evolved net</text>
+          <text x="316" y="162" fill="#6b7c90" font-size="9">26 → 20 → 8 · tanh</text>
+
+          <path d="M448 46h40c10 0 10 46 20 46" fill="none" stroke="rgba(255,255,255,.35)" marker-end="url(#ar)"/>
+          <path d="M448 151h40c10 0 10-46 20-46" fill="none" stroke="rgba(255,255,255,.35)" marker-end="url(#ar)"/>
+          <circle cx="524" cy="97" r="16" fill="rgba(255,255,255,.06)" stroke="rgba(255,255,255,.3)"/>
+          <text x="518" y="102" fill="#e9eff7" font-size="14">+</text>
+
+          <path d="M542 97h32" stroke="rgba(255,255,255,.35)" marker-end="url(#ar)"/>
+          <rect x="578" y="60" width="130" height="74" rx="4" fill="rgba(255,213,74,.10)" stroke="rgba(255,213,74,.5)"/>
+          <text x="598" y="86" fill="#ffd54a">softmax → act</text>
+          <text x="598" y="104" fill="#6b7c90" font-size="9">4 moves + 4 bites</text>
+          <text x="598" y="120" fill="#6b7c90" font-size="9">sampled, not argmax</text>
+        </g>
+      </svg>
+    </div>
+
+    <div class="lattice three" style="margin-top:var(--s6)">
+      <article class="chapter">
+        <div class="n">A</div>
+        <h3>Why a residual</h3>
+        <p>A network starting from noise would spend thousands of generations rediscovering
+        "walk toward food". Bolting a bounded correction onto a working instinct means every
+        mutation is spent on the part that is actually still open.</p>
+      </article>
+      <article class="chapter">
+        <div class="n">B</div>
+        <h3>Why sampling</h3>
+        <p>Actions are drawn from a softmax rather than taken greedily. Identical twins in
+        identical situations still diverge, so a lineage explores instead of locking into one
+        deterministic groove.</p>
+      </article>
+      <article class="chapter">
+        <div class="n">C</div>
+        <h3>Memory, such as it is</h3>
+        <p>The only thing a creature remembers is its own previous action, fed back as a one-hot
+        input. It is a single tick of short-term memory — enough to keep a direction, not enough
+        to plan.</p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<section class="story" id="run">
+  <div class="pad">
+    <div class="sec-head">
+      <p class="eyebrow">Run it · embed it · host it</p>
+      <h2>Two ways to put this somewhere</h2>
+      <p>The page you are on is a static site: the whole simulation is JavaScript running in your
+      tab, so every visitor gets their own world and any static host will serve it. The original
+      Python server is still there when you want one shared, persistent world instead.</p>
+    </div>
+
+    <div class="duo">
+      <div>
+        <h3 class="subh"><span class="ix">A</span> Static — your own world per visitor</h3>
+        <div class="cb">
+          <div class="cb-head">
+            <span class="cb-lang">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m8 6-6 6 6 6M16 6l6 6-6 6"/></svg>
+              Bash Command
+            </span>
+            <button class="copy" type="button" data-copy="#c1">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2.5"/><path d="M5 15a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2"/></svg>
+              <span>Copy</span>
+            </button>
+          </div>
+          <pre id="c1" class="num"><span class="c"># serve the folder — any static host works</span>
+cd public &amp;&amp; python3 -m http.server 8000
+<span class="c"># or drop public/ on Netlify, Vercel, Pages, S3…</span></pre>
+        </div>
+        <p class="after">
+          Needs a server only because the page loads ES modules; there is no backend and no build
+          step. Champion genomes ship in <b>seed_brains.json</b>, so the world opens already
+          competent instead of starting from noise.
+        </p>
+      </div>
+
+      <div>
+        <h3 class="subh"><span class="ix">B</span> Python — one shared, persistent world</h3>
+        <div class="cb">
+          <div class="cb-head">
+            <span class="cb-lang">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m8 6-6 6 6 6M16 6l6 6-6 6"/></svg>
+              Bash Command
+            </span>
+            <button class="copy" type="button" data-copy="#c2">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2.5"/><path d="M5 15a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2"/></svg>
+              <span>Copy</span>
+            </button>
+          </div>
+          <pre id="c2" class="num">pip install numpy
+python web/server.py        <span class="c"># http://localhost:8765</span>
+python web/evolve.py        <span class="c"># headless pre-evolution</span></pre>
+        </div>
+        <p class="after">
+          Everyone watches the same simulation and the best genomes it has ever produced are saved
+          back to disk, so a restart picks up where it left off. Set <b>EVO_READONLY=1</b> for a
+          public embed where visitors watch but cannot reset the world for everyone else. See
+          <b>DEPLOY.md</b> for Docker, Render and a VPS walkthrough.
+        </p>
+      </div>
+    </div>
+
+    <h3 class="block-h3">Embed it in a page</h3>
+    <div class="cb">
+      <div class="cb-head">
+        <span class="cb-lang">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m8 6-6 6 6 6M16 6l6 6-6 6"/></svg>
+          HTML Code
+        </span>
+        <button class="copy" type="button" data-copy="#c3">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2.5"/><path d="M5 15a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2"/></svg>
+          <span>Copy</span>
+        </button>
+      </div>
+      <pre id="c3" class="num">&lt;<span class="k">iframe</span> src="https://your-host.example/evolvarium/"
+        style="width:100%;max-width:1100px;height:900px;border:0"
+        loading="lazy" title="Evolvarium"&gt;&lt;/<span class="k">iframe</span>&gt;</pre>
+    </div>
+
+    <h3 class="block-h3">The Python server's HTTP API</h3>
+    <div class="tablewrap">
+      <table class="api">
+        <caption class="sr-only">Routes served by web/server.py</caption>
+        <thead><tr><th scope="col">Route</th><th scope="col">What it does</th></tr></thead>
+        <tbody>
+          <tr><td>/</td><td>the viewer</td></tr>
+          <tr><td>/stream</td><td>Server-Sent Events — a snapshot pushed on every tick</td></tr>
+          <tr><td>/state</td><td>the same snapshot as a one-off JSON request, gzipped</td></tr>
+          <tr><td>/control</td><td>play · pause · toggle · step · reset · fps · mutation · food · brain</td></tr>
+          <tr><td>/brains</td><td>the current champion genomes, as JSON</td></tr>
+          <tr><td>/healthz</td><td>liveness probe</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+</main>
+</div>
+
+<footer>
+  <div class="shell foot-in">
+    <div>
+      <div style="color:var(--muted)">Evolvarium — evolving artificial life</div>
+      <div style="margin-top:5px">A project by
+        <a href="https://bariszorlu.com" rel="noopener">Barış Zorlu</a></div>
+    </div>
+    <nav class="foot-links" aria-label="Footer">
+      <a href="#lab">Simulation</a>
+      <a href="#rules">Rules</a>
+      <a href="#brain">Brain</a>
+      <a href="#run">Run it</a>
+    </nav>
+  </div>
+</footer>
+
+<script type="module">
+import { World, genomeFromJSON, makeRng, colorFor, fitness, isCarnivore,
+         FOOD, POISON, SUPERFOOD } from './sim.js';
+
+const $ = s => document.querySelector(s);
+const clamp = (x, a, b) => x < a ? a : x > b ? b : x;
+const lerp = (a, b, t) => a + (b - a) * t;
+const ease = t => t < .5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+
+const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
+
+/* ── the world ─────────────────────────────────────────────────────────────── */
+const rng = makeRng();
+let world = new World({ width: 34, height: 34, maxAgents: 140, rng });
+let running = !reduced.matches;
+let stepsPerSec = 10, acc = 0, lastT = 0, selectedUid = null;
+
+/* Champions ship with the site, so the world opens already competent. Until the
+   fetch lands the world still runs — it just starts from noise for a moment. */
+fetch('seed_brains.json')
+  .then(r => r.ok ? r.json() : Promise.reject(new Error(r.status)))
+  .then(raw => {
+    const pack = role => (raw[role] || []).map(d => genomeFromJSON(d, rng));
+    world.champions = { herb: pack('herb'), carn: pack('carn') };
+    if (world.tick < 30) hardReset();          // still early: re-found from champions
+  })
+  .catch(() => {/* no seeds is survivable; the world evolves from scratch */});
+
+/* ── render model ──────────────────────────────────────────────────────────── */
+const cv = $('#world'), ctx = cv.getContext('2d', { alpha: false });
+let prevPos = new Map(), curPos = new Map(), bornAt = new Set();
+let byUid = new Map(), dying = [], plants = [], poisons = [], supers = [];
+let cell = 18, dpr = 1;
+
+function scanCells() {
+  plants.length = poisons.length = supers.length = 0;
+  const g = world.cell;
+  for (let k = 0; k < g.length; k++) {
+    const c = g[k];
+    if (c === FOOD) plants.push(k);
+    else if (c === POISON) poisons.push(k);
+    else if (c === SUPERFOOD) supers.push(k);
+  }
+}
+
+function snapshot(dead) {
+  const np = new Map(), nc = new Map(), nb = new Set();
+  for (const a of world.agents) {
+    const tgt = { i: a.i, j: a.j };
+    let pv = curPos.get(a.uid) || tgt;
+    // A creature that stepped over the seam would otherwise slide across the
+    // whole board; snap those instead of interpolating.
+    if (Math.abs(tgt.i - pv.i) > 1 || Math.abs(tgt.j - pv.j) > 1) pv = tgt;
+    np.set(a.uid, pv); nc.set(a.uid, tgt);
+    if (!curPos.has(a.uid)) nb.add(a.uid);
+  }
+  const now = performance.now();
+  for (const a of dead) {
+    dying.push({ p: curPos.get(a.uid) || { i: a.i, j: a.j },
+                 color: colorFor(a.genome), carn: isCarnivore(a.genome), t0: now });
+  }
+  if (dying.length > 60) dying.splice(0, dying.length - 60);
+  prevPos = np; curPos = nc; bornAt = nb;
+  byUid = new Map(world.agents.map(a => [a.uid, a]));
+  scanCells();
+}
+
+function sizeCanvas() {
+  dpr = Math.min(2, window.devicePixelRatio || 1);
+  const w = Math.max(240, cv.clientWidth);
+  cell = w / world.width;
+  cv.width = Math.round(w * dpr);
+  cv.height = Math.round(w * (world.height / world.width) * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+new ResizeObserver(sizeCanvas).observe(cv);
+
+function rrect(x, y, w, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + w, r); ctx.arcTo(x + w, y + w, x, y + w, r);
+  ctx.arcTo(x, y + w, x, y, r);         ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+function disc(i, j, color, scale) {
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.arc(j * cell + cell / 2, i * cell + cell / 2, cell * scale, 0, 6.2832);
+  ctx.fill();
+}
+function creature(pj, pi, color, scale, carn, killed, selected) {
+  const w = cell * .76 * scale, x = pj * cell + (cell - w) / 2, y = pi * cell + (cell - w) / 2;
+  if (carn) { ctx.shadowColor = 'rgba(255,90,60,.5)'; ctx.shadowBlur = cell * .55; }
+  ctx.fillStyle = color; rrect(x, y, w, w * .3); ctx.fill(); ctx.shadowBlur = 0;
+  if (killed) { ctx.lineWidth = 1.6; ctx.strokeStyle = '#fff'; rrect(x, y, w, w * .3); ctx.stroke(); }
+  if (selected) {
+    ctx.lineWidth = 2; ctx.strokeStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(pj * cell + cell / 2, pi * cell + cell / 2, cell * .62, 0, 6.2832);
+    ctx.stroke();
+  }
+  return { x, y, w };
+}
+
+function draw(now) {
+  const W = world.width;
+  ctx.fillStyle = '#04060a';
+  ctx.fillRect(0, 0, cv.width, cv.height);
+
+  for (const k of plants)  disc((k / W) | 0, k % W, '#39d17a', .21);
+  for (const k of poisons) {
+    ctx.fillStyle = '#b86bff';
+    ctx.fillRect((k % W) * cell + cell * .35, ((k / W) | 0) * cell + cell * .35, cell * .3, cell * .3);
+  }
+  const pulse = reduced.matches ? .34 : .30 + .05 * Math.sin(now / 300);
+  for (const k of supers) disc((k / W) | 0, k % W, '#ffd54a', pulse);
+
+  const fade = 1000 / Math.max(2, stepsPerSec);
+  dying = dying.filter(d => {
+    const t = (now - d.t0) / fade;
+    if (t >= 1) return false;
+    ctx.globalAlpha = (1 - t) * .6;
+    creature(d.p.j, d.p.i, d.color, 1 - .35 * t, false, false, false);
+    ctx.globalAlpha = 1;
+    return true;
+  });
+
+  const t = running && !reduced.matches ? ease(clamp(acc, 0, 1)) : 1;
+  for (const [uid, tgt] of curPos) {
+    const a = byUid.get(uid);
+    if (!a) continue;
+    const pv = prevPos.get(uid) || tgt;
+    const pi = lerp(pv.i, tgt.i, t), pj = lerp(pv.j, tgt.j, t);
+    const scale = bornAt.has(uid) ? .4 + .6 * t : 1;
+    const box = creature(pj, pi, colorFor(a.genome), scale, isCarnivore(a.genome),
+                         a.killed, uid === selectedUid);
+    if (cell >= 11) {
+      const hp = clamp(a.health / a.maxHealth, 0, 1);
+      ctx.fillStyle = 'rgba(0,0,0,.5)';
+      ctx.fillRect(box.x, box.y - 3, box.w, 2);
+      ctx.fillStyle = hp > .5 ? '#39d17a' : hp > .25 ? '#ffd54a' : '#ff4d4d';
+      ctx.fillRect(box.x, box.y - 3, box.w * hp, 2);
+    }
+  }
+}
+
+/* ── charts (hand-drawn: no chart library, no CDN) ─────────────────────────── */
+const HISTORY = 240;
+let histH = [], histC = [], histDiet = new Array(10).fill(0);
+
+function plotSize(c) {
+  const w = Math.max(120, c.clientWidth);
+  const cssH = c.dataset.h ? +c.dataset.h : 84;
+  const d = Math.min(2, window.devicePixelRatio || 1);
+  if (c.width !== Math.round(w * d) || c.height !== Math.round(cssH * d)) {
+    c.width = Math.round(w * d); c.height = Math.round(cssH * d); c._dpr = d;
+  }
+  const g = c.getContext('2d');
+  g.setTransform(d, 0, 0, d, 0, 0);
+  g.clearRect(0, 0, w, cssH);
+  return { g, w, h: cssH };
+}
+
+function drawPop() {
+  const c = $('#plotPop'); c.dataset.h = 92;
+  const { g, w, h } = plotSize(c);
+  const n = Math.max(2, histH.length);
+  let top = 8;
+  for (let i = 0; i < n; i++) top = Math.max(top, histH[i] || 0, histC[i] || 0);
+  top = Math.ceil(top * 1.15 / 10) * 10;
+
+  g.strokeStyle = 'rgba(255,255,255,.06)'; g.lineWidth = 1;
+  for (let k = 1; k < 4; k++) {
+    const y = Math.round(h * k / 4) + .5;
+    g.beginPath(); g.moveTo(0, y); g.lineTo(w, y); g.stroke();
+  }
+  const px = i => (i / Math.max(1, HISTORY - 1)) * w;
+  const py = v => h - (v / top) * (h - 4) - 2;
+
+  const series = (data, stroke, fill) => {
+    if (data.length < 2) return;
+    g.beginPath(); g.moveTo(px(0), py(data[0]));
+    for (let i = 1; i < data.length; i++) g.lineTo(px(i), py(data[i]));
+    g.strokeStyle = stroke; g.lineWidth = 1.8; g.lineJoin = 'round'; g.stroke();
+    g.lineTo(px(data.length - 1), h); g.lineTo(px(0), h); g.closePath();
+    g.fillStyle = fill; g.fill();
+  };
+  series(histH, '#39c6ff', 'rgba(57,198,255,.14)');
+  series(histC, '#ff6a4d', 'rgba(255,106,77,.14)');
+
+  g.fillStyle = '#6b7c90';
+  g.font = '500 10px JetBrains Mono, monospace';
+  g.fillText(String(top), 4, 12);
+}
+
+function drawDiet() {
+  const c = $('#plotDiet'); c.dataset.h = 88;
+  const { g, w, h } = plotSize(c);
+  const top = Math.max(4, ...histDiet);
+  const gap = 4, bw = (w - gap * 9) / 10;
+  for (let i = 0; i < 10; i++) {
+    const v = histDiet[i], bh = Math.max(v ? 3 : 0, (v / top) * (h - 14));
+    const x = i * (bw + gap);
+    g.fillStyle = 'rgba(255,255,255,.045)';
+    g.fillRect(x, 0, bw, h - 12);
+    g.fillStyle = colorFor({ diet: (i + .5) / 10 });
+    g.globalAlpha = v ? 1 : .25;
+    g.fillRect(x, h - 12 - bh, bw, bh);
+    g.globalAlpha = 1;
+    if (v) {
+      g.fillStyle = '#8fa1b6';
+      g.font = '500 9px JetBrains Mono, monospace';
+      g.textAlign = 'center';
+      g.fillText(String(v), x + bw / 2, h - 2);
+      g.textAlign = 'left';
+    }
+  }
+}
+
+/* ── readouts ──────────────────────────────────────────────────────────────── */
+const fmt = n => n.toLocaleString('en-US');
+let lastUI = 0;
+
+function updateUI(force) {
+  const now = performance.now();
+  if (!force && now - lastUI < 120) return;
+  lastUI = now;
+
+  const { herbivores, carnivores } = world.counts();
+  const n = world.agents.length;
+  let fitSum = 0, ageSum = 0;
+  for (const a of world.agents) { fitSum += fitness(a); ageSum += a.age; }
+
+  $('#sPop').textContent  = n + ' / ' + world.maxAgents;
+  $('#sGen').textContent  = fmt(world.maxGeneration);
+  $('#sHerb').textContent = fmt(herbivores);
+  $('#sCarn').textContent = fmt(carnivores);
+  $('#sTick').textContent = fmt(world.tick);
+  $('#sFit').textContent  = n ? (fitSum / n).toFixed(1) : '–';
+  $('#sAge').textContent  = n ? (ageSum / n).toFixed(1) : '–';
+  $('#sBD').textContent   = fmt(world.births) + ' / ' + fmt(world.deaths);
+  $('#sImm').textContent  = fmt(world.rescues + world.immigrations);
+
+  /* the HUD strip above the world repeats the four numbers you watch while it runs */
+  $('#hudTick').textContent = fmt(world.tick);
+  $('#hudPop').textContent  = n + '/' + world.maxAgents;
+  $('#hudGen').textContent  = fmt(world.maxGeneration);
+  $('#hudHerb').textContent = fmt(herbivores);
+  $('#hudCarn').textContent = fmt(carnivores);
+
+  drawPop(); drawDiet();
+  $('#plotPopAlt').textContent =
+    `Population over the last ${histH.length} ticks: ${herbivores} herbivores and ${carnivores} carnivores now.`;
+
+  renderInspector();
+  renderBest();
+}
+
+function renderInspector() {
+  const box = $('#selBody');
+  if (selectedUid == null) return;
+  const a = byUid.get(selectedUid);
+  if (!a) {
+    box.innerHTML = '<span class="empty">That creature is no longer alive. Please select another creature to inspect, or press the Inspect button to examine a random creature.</span>';
+    return;
+  }
+  const g = a.genome, carn = isCarnivore(g);
+  const hp = Math.round(100 * clamp(a.health / a.maxHealth, 0, 1));
+  const ag = Math.round(100 * clamp(a.age / a.maxAge, 0, 1));
+  let mag = 0;
+  for (let i = 0; i < g.W.length; i++) mag += Math.abs(g.W[i]);
+  mag /= g.W.length;
+
+  box.innerHTML = `
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+      <span class="swatch" style="background:${colorFor(g)}"></span>
+      <span class="pill ${carn ? 'c' : 'h'}">${carn ? 'Carnivore' : 'Herbivore'}</span>
+      <span style="font:500 11px/1 var(--mono);color:var(--dim)">family ${a.gene} · #${a.uid}</span>
+    </div>
+    <div class="kv"><span>Diet · plant → meat</span><b>${g.diet.toFixed(2)}</b></div>
+    <div class="kv"><span>Aggression</span><b>${g.aggr.toFixed(2)}</b></div>
+    <div class="kv"><span>Vision</span><b>${g.vision}</b></div>
+    <div class="kv"><span>Mutation rate</span><b>${(g.mrate ?? 1).toFixed(2)}×</b></div>
+    <div class="kv"><span>Mean |weight|</span><b>${mag.toFixed(3)}</b></div>
+    <div class="kv"><span>Generation</span><b>${a.generation}</b></div>
+    <div style="margin-top:12px">
+      <div class="kv" style="padding-bottom:0"><span>Health</span><b>${Math.round(a.health)} / ${a.maxHealth}</b></div>
+      <div class="bar"><i style="width:${hp}%;background:${hp > 50 ? 'var(--plant)' : hp > 25 ? 'var(--super)' : 'var(--carn)'}"></i></div>
+    </div>
+    <div style="margin-top:10px">
+      <div class="kv" style="padding-bottom:0"><span>Age</span><b>${a.age} / ${a.maxAge}</b></div>
+      <div class="bar"><i style="width:${ag}%;background:var(--fit)"></i></div>
+    </div>
+    <div class="kv" style="margin-top:12px"><span>Eaten · kills · offspring</span>
+      <b>${a.eaten} · ${a.kills} · ${a.offspring}</b></div>
+    <div class="kv"><span>Fitness so far</span><b>${fitness(a).toFixed(0)}</b></div>`;
+}
+
+function renderBest() {
+  const b = world.best;
+  if (!b) return;
+  $('#bestBody').innerHTML = `
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+      <span class="swatch" style="background:${b.color}"></span>
+      <span class="pill ${b.carn ? 'c' : 'h'}">${b.carn ? 'Carnivore' : 'Herbivore'}</span>
+      <span style="font:500 11px/1 var(--mono);color:var(--dim)">died at tick ${fmt(b.tick)}</span>
+    </div>
+    <div class="kv"><span>Fitness</span><b>${b.score}</b></div>
+    <div class="kv"><span>Generation</span><b>${b.generation}</b></div>
+    <div class="kv"><span>Offspring</span><b>${b.offspring}</b></div>
+    <div class="kv"><span>Eaten · kills</span><b>${b.eaten} · ${b.kills}</b></div>
+    <div class="kv"><span>Diet</span><b>${b.diet.toFixed(2)}</b></div>`;
+}
+
+/* ── loop ──────────────────────────────────────────────────────────────────── */
+function doStep() {
+  const dead = world.step();
+  snapshot(dead);
+  const c = world.counts();
+  histH.push(c.herbivores); histC.push(c.carnivores);
+  if (histH.length > HISTORY) { histH.shift(); histC.shift(); }
+  histDiet = world.dietHistogram(10);
+}
+
+function frame(now) {
+  requestAnimationFrame(frame);
+  const dt = Math.min(.25, (now - lastT) / 1000); lastT = now;
+  if (running) {
+    acc += dt * stepsPerSec;
+    let guard = 0;
+    while (acc >= 1 && guard++ < 4) { acc -= 1; doStep(); }
+    if (acc > 1) acc = 1;               // fell behind: drop the backlog, keep time
+    updateUI(false);
+  }
+  draw(now);
+}
+
+const EMPTY_SEL = 'Click any creature in the world to inspect it, or press the Inspect button to examine a randomly selected creature. Read details about diet, brain structure, age, health, and life history.';
+
+function hardReset() {
+  world.reset();
+  prevPos.clear(); curPos.clear(); bornAt.clear(); byUid.clear();
+  dying = []; histH = []; histC = []; selectedUid = null; acc = 0;
+  $('#selBody').innerHTML = EMPTY_SEL;
+  $('#bestBody').textContent = 'No creature has completed a full life cycle yet. When one does, their complete life story will be recorded here.';
+  snapshot([]);
+  sizeCanvas();
+  updateUI(true);
+}
+
+/* ── controls ──────────────────────────────────────────────────────────────── */
+const ICON_PAUSE = '<path d="M7 5h3.4v14H7zM13.6 5H17v14h-3.4z"/>';
+const ICON_PLAY  = '<path d="M8 5.5v13l11-6.5-11-6.5Z"/>';
+
+function setRunning(v) {
+  running = v;
+  acc = 0;
+  $('#lblToggle').textContent = v ? 'Pause' : 'Play';
+  $('#icoToggle').innerHTML = v ? ICON_PAUSE : ICON_PLAY;
+  $('#btnToggle').setAttribute('aria-label', v ? 'Pause simulation evolution' : 'Play simulation evolution');
+  $('#runState').textContent = v ? 'The simulation is actively evolving.' : 'The simulation is paused.';
+  $('#pulse').classList.toggle('live', v);
+  $('#hudState').classList.toggle('on', v);
+  $('#hudRun').textContent = v ? 'Running' : 'Paused';
+  $('#veil').classList.toggle('show', !v && reduced.matches && world.tick === 0);
+}
+
+function stepOnce() {
+  setRunning(false);
+  doStep(); updateUI(true);
+  $('#runState').textContent = 'Advanced simulation by one tick. Current tick: ' + world.tick + '.';
+}
+function scatterFood() {
+  world.scatter(FOOD, 60); scanCells(); updateUI(true);
+  $('#runState').textContent = 'Added 60 new plants to the environment.';
+}
+function toggleBrain() {
+  const neuro = world.brainmode !== 'neuro';
+  world.brainmode = neuro ? 'neuro' : 'instinct';
+  $('#lblBrain').textContent = neuro ? 'Neural net' : 'Instinct';
+  $('#hudMode').textContent = neuro ? 'Neural' : 'Instinct';
+  $('#btnBrain').setAttribute('aria-pressed', String(neuro));
+  $('#runState').textContent = neuro
+    ? 'Creatures are using their evolved neural networks for decision making.'
+    : 'Evolved networks are switched off — creatures are using only hard-wired instinct behaviors.';
+}
+
+$('#btnToggle').addEventListener('click', () => setRunning(!running));
+$('#btnStart').addEventListener('click', () => { setRunning(true); $('#veil').classList.remove('show'); });
+$('#btnStep').addEventListener('click', stepOnce);
+$('#btnFood').addEventListener('click', scatterFood);
+$('#btnBrain').addEventListener('click', toggleBrain);
+$('#btnReset').addEventListener('click', () => {
+  hardReset();
+  $('#runState').textContent = 'World has been reset. Previously evolved champion organisms have been preserved as founding population for the new world.';
+});
+$('#btnPick').addEventListener('click', () => {
+  if (!world.agents.length) return;
+  const a = world.agents[Math.floor(Math.random() * world.agents.length)];
+  selectedUid = a.uid;
+  renderInspector();
+  $('#selBody').scrollIntoView({ block: 'nearest',
+    behavior: reduced.matches ? 'auto' : 'smooth' });
+});
+
+$('#fps').addEventListener('input', e => {
+  stepsPerSec = +e.target.value;
+  $('#fpsVal').textContent = stepsPerSec;
+});
+$('#mut').addEventListener('input', e => {
+  world.mutSigma = +e.target.value;
+  $('#mutVal').textContent = world.mutSigma.toFixed(2);
+});
+
+/* the console reflex: the four things you reach for most, on the keyboard */
+window.addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const t = e.target;
+  if (t instanceof HTMLElement &&
+      (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+  switch (e.key) {
+    case ' ': case 'Spacebar': e.preventDefault(); setRunning(!running); break;
+    case 's': case 'S': stepOnce(); break;
+    case 'f': case 'F': scatterFood(); break;
+    case 'b': case 'B': toggleBrain(); break;
+    default: return;
+  }
+});
+
+cv.addEventListener('click', e => {
+  const r = cv.getBoundingClientRect();
+  const j = Math.floor((e.clientX - r.left) / (r.width / world.width));
+  const i = Math.floor((e.clientY - r.top) / (r.height / world.height));
+  let best = null, bd = 9;
+  for (const a of world.agents) {
+    const d = Math.abs(a.i - i) + Math.abs(a.j - j);
+    if (d < bd) { bd = d; best = a; }
+  }
+  selectedUid = best && bd <= 2 ? best.uid : null;
+  if (selectedUid == null) {
+    $('#selBody').innerHTML = '<span class="empty">No creature was found at that location. Try clicking directly on a creature to inspect its details.</span>';
+  } else renderInspector();
+});
+
+/* ── code blocks ───────────────────────────────────────────────────────────── */
+/* Line numbers come from a CSS counter on these wrappers, so they stay out of
+   the text the copy button puts on the clipboard. */
+for (const pre of document.querySelectorAll('pre.num')) {
+  pre.innerHTML = pre.innerHTML.split('\n')
+    .map(line => '<span class="l">' + (line || ' ') + '</span>').join('');
+}
+for (const btn of document.querySelectorAll('.copy')) {
+  const lbl = btn.querySelector('span');
+  btn.addEventListener('click', async () => {
+    const text = document.querySelector(btn.dataset.copy).innerText;
+    try { await navigator.clipboard.writeText(text); } catch { return; }
+    lbl.textContent = 'Copied';
+    btn.classList.add('done');
+    setTimeout(() => { lbl.textContent = 'Copy'; btn.classList.remove('done'); }, 1600);
+  });
+}
+
+/* ── boot ──────────────────────────────────────────────────────────────────── */
+reduced.addEventListener('change', () => { if (reduced.matches) setRunning(false); });
+window.addEventListener('resize', () => { sizeCanvas(); updateUI(true); });
+
+snapshot([]);
+sizeCanvas();
+setRunning(running);
+updateUI(true);
+lastT = performance.now();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

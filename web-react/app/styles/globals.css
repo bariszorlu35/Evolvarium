@@ -1,0 +1,208 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Evolvarium — instrument console palette.
+
+   Mono-first typography, near-black chassis, chart slots. The accent slots
+   carry Evolvarium's own species colours, which are NOT free variables:
+   sim.js paints them on the canvas, so the legend, the buttons and the
+   charts have to agree with the world exactly.
+   ═══════════════════════════════════════════════════════════════════════════ */
+:root {
+  /* chassis */
+  --void: #04060a;
+  --background: #05070a;
+  --foreground: #e9eff7;
+  --card: #080b10;
+  --card-foreground: #e9eff7;
+  --popover: #0e131a;
+  --popover-foreground: #e9eff7;
+
+  /* species — locked to the canvas */
+  --herb: #39c6ff;
+  --carn: #ff6a4d;
+  --plant: #39d17a;
+  --poison: #b86bff;
+  --super: #ffd54a;
+  --fit: #8ea8ff;
+
+  /* semantic */
+  --primary: #39c6ff;
+  --primary-foreground: #04121a;
+  --secondary: #ff6a4d;
+  --secondary-foreground: #180603;
+  --muted: #0e131a;
+  --muted-foreground: #8fa1b6;
+  --accent: #0e131a;
+  --accent-foreground: #e9eff7;
+  --destructive: #ff6a4d;
+  --destructive-foreground: #180603;
+  --dim: #6b7c90;
+
+  /* hairlines, not cards */
+  --border: rgba(255, 255, 255, 0.075);
+  --border-strong: rgba(255, 255, 255, 0.145);
+  --input: rgba(255, 255, 255, 0.145);
+  --ring: #39c6ff;
+
+  /* charts follow the food chain */
+  --chart-1: #39c6ff;
+  --chart-2: #ff6a4d;
+  --chart-3: #39d17a;
+  --chart-4: #b86bff;
+  --chart-5: #ffd54a;
+
+  --font-sans: var(--font-geist), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-space-grotesk), var(--font-geist), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* instrument, not app: almost no rounding */
+  --radius: 0.25rem;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-void: var(--void);
+  --color-dim: var(--dim);
+  --color-border-strong: var(--border-strong);
+
+  --color-herb: var(--herb);
+  --color-carn: var(--carn);
+  --color-plant: var(--plant);
+  --color-poison: var(--poison);
+  --color-super: var(--super);
+  --color-fit: var(--fit);
+
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+
+  --font-sans: var(--font-sans);
+  --font-display: var(--font-display);
+  --font-mono: var(--font-mono);
+
+  --radius-sm: calc(var(--radius) - 2px);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) * 2);
+  --radius-xl: calc(var(--radius) * 3);
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    color-scheme: dark;
+    scroll-behavior: smooth;
+    scroll-padding-top: 5rem;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-size: 16px;
+    line-height: 1.75;
+    overflow-x: hidden;
+  }
+
+  /* every mono run on this page is an instrument readout, so lock the figures
+     into columns there and leave running prose proportional */
+  code, kbd, samp, pre, .font-mono {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* graph-paper chassis, fading out below the fold */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    opacity: 0.5;
+    background:
+      linear-gradient(var(--border) 1px, transparent 1px) 0 0 / 100% 84px,
+      linear-gradient(90deg, var(--border) 1px, transparent 1px) 0 0 / 84px 100%;
+    -webkit-mask-image: linear-gradient(180deg, #000 0, rgba(0, 0, 0, 0.35) 55%, transparent 100%);
+    mask-image: linear-gradient(180deg, #000 0, rgba(0, 0, 0, 0.35) 55%, transparent 100%);
+  }
+
+  h1, h2, h3 {
+    font-family: var(--font-display);
+    text-wrap: balance;
+    font-weight: 600;
+    /* Space Grotesk sets a touch loose for display sizes */
+    letter-spacing: -0.02em;
+  }
+
+  :where(a, button, input, summary, [tabindex]):focus-visible {
+    @apply outline-2 outline-offset-2 outline-primary rounded-xs;
+  }
+
+  ::selection {
+    background: color-mix(in oklab, var(--herb) 30%, transparent);
+    color: var(--foreground);
+  }
+}
+
+@layer utilities {
+  /* the chassis rails: hairlines running the whole length of the page */
+  .rails {
+    @apply border-x border-border;
+  }
+  @media (max-width: 900px) {
+    .rails {
+      @apply border-x-0;
+    }
+  }
+
+  /* MaskedTextReveal turns <strong> into emphasis; in the hero that emphasis
+     is the herbivore cyan, so the headline names the palette straight away. */
+  .hero-headline strong {
+    color: var(--herb);
+    font-weight: 600;
+  }
+
+  .eyebrow {
+    @apply flex items-center gap-2.5 font-mono text-[10.5px] uppercase text-dim;
+    letter-spacing: 0.22em;
+  }
+  .eyebrow::after {
+    content: "";
+    @apply h-px flex-1 bg-border;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

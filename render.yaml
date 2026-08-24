@@ -1,0 +1,18 @@
+# One-click deploy on Render (https://render.com). Point a new Blueprint at
+# this repo and it builds, runs and health-checks the world for you.
+services:
+  - type: web
+    name: evolvarium
+    runtime: python
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    startCommand: python web/server.py
+    healthCheckPath: /healthz
+    envVars:
+      # Everyone shares one world and the controls are global. Set this to 1
+      # for a public embed where visitors should watch but not pause or reset.
+      - key: EVO_READONLY
+        value: "0"
+      # Stop stepping when nobody has watched for this many seconds.
+      - key: EVO_IDLE_TIMEOUT
+        value: "90"
