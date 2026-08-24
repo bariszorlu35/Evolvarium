@@ -39,8 +39,8 @@ to build that. Framework preset: Next.js. Production branch: `main`.
 **3. The rewrite in the `bariszorlu.com` repo** (`vercel.json`):
 
 ```json
-{ "source": "/Evolvarium",         "destination": "https://evolvarium.vercel.app/Evolvarium" },
-{ "source": "/Evolvarium/:path*",  "destination": "https://evolvarium.vercel.app/Evolvarium/:path*" }
+{ "source": "/Evolvarium",         "destination": "https://evolvarium-chi.vercel.app/Evolvarium" },
+{ "source": "/Evolvarium/:path*",  "destination": "https://evolvarium-chi.vercel.app/Evolvarium/:path*" }
 ```
 
 Both entries are needed: the first for the page itself, the second for `_next/`
